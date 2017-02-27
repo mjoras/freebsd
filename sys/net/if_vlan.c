@@ -103,7 +103,7 @@ struct ifvlantrunk {
 };
 
 /*
- * This macro provides a facility to iterate over every vlan in the trunk with
+ * This macro provides a facility to iterate over every vlan on a trunk with
  * the assumption that none will be added/removed during iteration.
  */
 #ifdef VLAN_ARRAY
@@ -217,26 +217,24 @@ static eventhandler_tag ifdetach_tag;
 static eventhandler_tag iflladdr_tag;
 
 /*
- * There are two global locks protecting vlan components, a "configuration" sx,
- * and an "IO" rmlock. The locking strategy is fairly straightforward. The
- * configuration lock is used in the vlan ioctl paths to provide shared and
- * exclusive access to all vlans. This allows safe concurrent configuration of
- * vlans.
+ * There are two global locks protecting vlan components: an sx(9) and a
+ * non-sleepable rmlock(9). The locking strategy is fairly straightforward. The
+ * sx is mostly used in the vlan ioctl paths to safe access to all vlan
+ * interfaces. The rmlock exists to synchronize the arrival/departure of vlans
+ * with the tx/rx paths (vlan_input and vlan_transmit). Additionally, since the
+ * rmlock is not sleepable, it is used in some configuration paths where
+ * sleeping is not appropriate. Both locks are acquired when vlans interfaces
+ * are destroyed, which makes existence checks of an ifnet's if_vlantrunk field
+ * safe while either lock is held.
  *
- * The rmlock exists to facilitate the synchronization of arrival/departure
- * events and the vlan tx/rx paths (vlan_input and vlan_transmit). Both of
- * these functions use fields containing references to ifvlantrunks to
- * determine whether or not vlan exists. These paths acquire a shared lock on
- * the IO lock to safely read the trunk fields. Note that despite these
- * protections, there is still an inherent race in the destruction of vlans
- * since there's no guarantee that the ifnet hasn't been freed/reused when the
- * IO functions are called. This can only be fixed by addressing ifnet's
- * lifetime issues.
+ * Note that despite these protections, there is still an inherent race in the
+ * destruction of vlans since there's no guarantee that the ifnet hasn't been
+ * freed/reused when the tx/rx functions are called by the stack. This can only
+ * be fixed by addressing ifnet's lifetime issues.
  */
-
 static struct rmlock ifv_rm_lock;
 static struct sx ifv_sx;
-#define VLAN_RM_LOCK_INIT()		rm_init(&ifv_rm_lock, "vlan_rm")
+#define	VLAN_RM_LOCK_INIT()		rm_init(&ifv_rm_lock, "vlan_rm")
 #define	VLAN_RM_LOCK_DESTROY()		rm_destroy(&ifv_rm_lock)
 #define	VLAN_RM_RLOCK()			rm_rlock(&ifv_rm_lock, &rm_tracker)
 #define	VLAN_RM_WLOCK()			rm_wlock(&ifv_rm_lock)
@@ -247,15 +245,15 @@ static struct sx ifv_sx;
 #define	VLAN_RM_WLOCK_ASSERT()		rm_assert(&ifv_rm_lock, RA_WLOCKED)
 #define	VLAN_RM_LOCK_READER		struct rm_priotracker rm_tracker
 
-#define VLAN_SX_LOCK_INIT()		sx_init(&ifv_sx, "vlan_sx")
-#define VLAN_SX_LOCK_DESTROY()		sx_destroy(&ifv_sx)
-#define VLAN_SX_SLOCK()			sx_slock(&ifv_sx)
-#define VLAN_SX_XLOCK()			sx_xlock(&ifv_sx)
-#define VLAN_SX_SUNLOCK()		sx_sunlock(&ifv_sx)
-#define VLAN_SX_XUNLOCK()		sx_xunlock(&ifv_sx)
-#define VLAN_SX_SLOCK_ASSERT()		sx_assert(&ifv_sx, SA_SLOCKED)
-#define VLAN_SX_LOCK_ASSERT()		sx_assert(&ifv_sx, SA_LOCKED)
-#define VLAN_SX_XLOCK_ASSERT()		sx_assert(&ifv_sx, SA_XLOCKED)
+#define	VLAN_SX_LOCK_INIT()		sx_init(&ifv_sx, "vlan_sx")
+#define	VLAN_SX_LOCK_DESTROY()		sx_destroy(&ifv_sx)
+#define	VLAN_SX_SLOCK()			sx_slock(&ifv_sx)
+#define	VLAN_SX_XLOCK()			sx_xlock(&ifv_sx)
+#define	VLAN_SX_SUNLOCK()		sx_sunlock(&ifv_sx)
+#define	VLAN_SX_XUNLOCK()		sx_xunlock(&ifv_sx)
+#define	VLAN_SX_SLOCK_ASSERT()		sx_assert(&ifv_sx, SA_SLOCKED)
+#define	VLAN_SX_LOCK_ASSERT()		sx_assert(&ifv_sx, SA_LOCKED)
+#define	VLAN_SX_XLOCK_ASSERT()		sx_assert(&ifv_sx, SA_XLOCKED)
 
 
 /*
@@ -636,6 +634,8 @@ vlan_iflladdr(void *arg __unused, struct ifnet *ifp)
 	/*
 	 * We need an exclusive lock here to prevent concurrent SIOCSIFLLADDR
 	 * ioctl calls on the parent garbling the lladdr of the child vlan.
+	 * Additionally needs to be the rmlock to avoid sleeping while hodling
+	 * the IF_ADDR rwlock.
 	 */
 	VLAN_RM_WLOCK();
 	trunk = ifp->if_vlantrunk;
@@ -709,15 +709,17 @@ static struct ifnet  *
 vlan_trunkdev(struct ifnet *ifp)
 {
 	struct ifvlan *ifv;
+	VLAN_RM_LOCK_READER;
 
 	if (ifp->if_type != IFT_L2VLAN)
 		return (NULL);
+	/* Not clear if callers are sleepable, so acquire the rmlock. */
+	VLAN_RM_RLOCK();
 	ifv = ifp->if_softc;
 	ifp = NULL;
-	VLAN_SX_SLOCK();
 	if (ifv->ifv_trunk)
 		ifp = PARENT(ifv);
-	VLAN_SX_SUNLOCK();
+	VLAN_RM_RUNLOCK();
 	return (ifp);
 }
 
@@ -779,12 +781,14 @@ vlan_devat(struct ifnet *ifp, uint16_t vid)
 {
 	struct ifvlantrunk *trunk;
 	struct ifvlan *ifv;
+	VLAN_RM_LOCK_READER;
 	TRUNK_LOCK_READER;
 
-	VLAN_RM_WLOCK();
+	/* Not clear if callers are sleepable, so acquire the rmlock. */
+	VLAN_RM_RLOCK();
 	trunk = ifp->if_vlantrunk;
 	if (trunk == NULL) {
-		VLAN_RM_WUNLOCK();
+		VLAN_RM_RUNLOCK();
 		return (NULL);
 	}
 	ifp = NULL;
@@ -793,7 +797,7 @@ vlan_devat(struct ifnet *ifp, uint16_t vid)
 	if (ifv)
 		ifp = ifv->ifv_ifp;
 	TRUNK_RUNLOCK(trunk);
-	VLAN_RM_WUNLOCK();
+	VLAN_RM_RUNLOCK();
 	return (ifp);
 }
 
@@ -1133,8 +1137,8 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	int error, len, mcast;
 	VLAN_RM_LOCK_READER;
 
-	ifv = ifp->if_softc;
 	VLAN_RM_RLOCK();
+	ifv = ifp->if_softc;
 	if (TRUNK(ifv) == NULL) {
 		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		VLAN_RM_RUNLOCK();
@@ -1646,11 +1650,12 @@ vlan_link_state(struct ifnet *ifp)
 	struct ifvlantrunk *trunk;
 	struct ifvlan *ifv;
 	int i;
+	VLAN_RM_LOCK_READER;
 
-	VLAN_RM_WLOCK();
+	VLAN_RM_RLOCK();
 	trunk = ifp->if_vlantrunk;
 	if (trunk == NULL) {
-		VLAN_RM_WUNLOCK();
+		VLAN_RM_RUNLOCK();
 		return;
 	}
 
@@ -1661,7 +1666,7 @@ vlan_link_state(struct ifnet *ifp)
 		    trunk->parent->if_link_state);
 	}
 	TRUNK_WUNLOCK(trunk);
-	VLAN_RM_WUNLOCK();
+	VLAN_RM_RUNLOCK();
 }
 
 static void
