@@ -606,8 +606,8 @@ vlan_setmulti(struct ifnet *ifp)
 	int			error;
 
 	/*
-	 * XXX This is stupidly the rmlock to avoid sleeping while holding the
-	 * in6_multi_mtx (see in6_mc_join_locked).
+	 * XXX This stupidly needs the rmlock to avoid sleeping while holding
+	 * the in6_multi_mtx (see in6_mc_join_locked).
 	 */
 	VLAN_RWLOCK_ASSERT();
 
