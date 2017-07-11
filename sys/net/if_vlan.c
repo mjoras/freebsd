@@ -225,8 +225,8 @@ static eventhandler_tag iflladdr_tag;
 /*
  * if_vlan uses two module-level locks to allow concurrent modification of vlan
  * interfaces and (mostly) allow for vlans to be destroyed while they are being
- * used for tx/rx. To accomplish this in a way that is has acceptable
- * performance and cooperation with other parts of the network stack there is a
+ * used for tx/rx. To accomplish this in a way that has acceptable performance
+ * and cooperation with other parts of the network stack there is a
  * non-sleepable rmlock(9) and an sx(9). Both locks are exclusively acquired
  * when destroying a vlan interface, i.e. when the if_vlantrunk field of struct
  * ifnet is de-allocated and NULL'd. Thus a reader holding either lock has a
@@ -263,9 +263,9 @@ static struct sx _VLAN_SX_ID;
 
 #define	_VLAN_RM_TRACKER		_vlan_rm_tracker
 #define	VLAN_RLOCK()			rm_rlock(&_VLAN_RM_ID, \
-    &_VLAN_RM_TRACKER)
+					    &_VLAN_RM_TRACKER)
 #define	VLAN_RUNLOCK()			rm_runlock(&_VLAN_RM_ID, \
-    &_VLAN_RM_TRACKER)
+					    &_VLAN_RM_TRACKER)
 #define	VLAN_WLOCK()			rm_wlock(&_VLAN_RM_ID)
 #define	VLAN_WUNLOCK()			rm_wunlock(&_VLAN_RM_ID)
 #define	VLAN_RLOCK_ASSERT()		rm_assert(&_VLAN_RM_ID, RA_RLOCKED)
@@ -284,10 +284,10 @@ static struct sx _VLAN_SX_ID;
 
 /*
  * We also have a per-trunk rmlock(9), that is locked shared on packet
- * processing and exclusive when configuration is changed.
- * Note: This should only be acquired while there is a shared lock on one of
- * the global locks via VLAN_SLOCK or VLAN_RLOCK. Thus, an exclusive lock on
- * the global locks makes a call to TRUNK_WLOCK technically superfluous.
+ * processing and exclusive when configuration is changed.  Note: This should
+ * only be acquired while there is a shared lock on both of the global locks
+ * via VLAN_SLOCK or VLAN_RLOCK. Thus, an exclusive lock on the global locks
+ * makes a call to TRUNK_RLOCK/TRUNK_WLOCK technically superfluous.
  */
 #define	_TRUNK_RM_TRACKER		_trunk_rm_tracker
 #define	TRUNK_LOCK_INIT(trunk)		rm_init(&(trunk)->lock, vlanname)
