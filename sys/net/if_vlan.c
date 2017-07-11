@@ -284,8 +284,8 @@ static struct sx _VLAN_SX_ID;
 
 /*
  * We also have a per-trunk rmlock(9), that is locked shared on packet
- * processing and exclusive when configuration is changed.  Note: This should
- * only be acquired while there is a shared lock on both of the global locks
+ * processing and exclusive when configuration is changed. Note: This should
+ * only be acquired while there is a shared lock on either of the global locks
  * via VLAN_SLOCK or VLAN_RLOCK. Thus, an exclusive lock on the global locks
  * makes a call to TRUNK_RLOCK/TRUNK_WLOCK technically superfluous.
  */
