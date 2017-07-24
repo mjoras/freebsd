@@ -758,6 +758,8 @@ char	*tcp_log_addrs(struct in_conninfo *, struct tcphdr *, void *,
 	    const void *);
 char	*tcp_log_vain(struct in_conninfo *, struct tcphdr *, void *,
 	    const void *);
+char	*tcp_log_newconn(struct in_conninfo *, struct tcphdr *, void *,
+	    const void *);
 int	 tcp_reass(struct tcpcb *, struct tcphdr *, int *, struct mbuf *);
 void	 tcp_reass_global_init(void);
 void	 tcp_reass_flush(struct tcpcb *);

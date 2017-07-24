@@ -665,7 +665,7 @@ syncache_socket(struct syncache *sc, struct socket *lso, struct mbuf *m)
 		 * RTO and try again.
 		 */
 		TCPSTAT_INC(tcps_listendrop);
-		if ((s = tcp_log_addrs(&sc->sc_inc, NULL, NULL, NULL))) {
+		if ((s = tcp_log_newconn(&sc->sc_inc, NULL, NULL, NULL))) {
 			log(LOG_DEBUG, "%s; %s: Socket create failed "
 			    "due to limits or memory shortage\n",
 			    s, __func__);

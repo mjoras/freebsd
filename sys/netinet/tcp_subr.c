@@ -198,6 +198,16 @@ static int	tcp_log_debug = 0;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_debug, CTLFLAG_RW,
     &tcp_log_debug, 0, "Log errors caused by incoming TCP segments");
 
+static int	tcp_log_newconn_failed = 0;
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_newconn_failed, CTLFLAG_RW,
+    &tcp_log_newconn_failed, 0,
+    "Log addresses if creating a new connection from the syncache fails");
+
+static int	tcp_log_newconn_failed_ratelimit = -1;
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_newconn_failed, CTLFLAG_RW,
+    &tcp_log_newconn_failed_ratelimit, 0,
+    "Per second limit for logging a failed new connection from the syncache");
+
 static int	tcp_tcbhashsize;
 SYSCTL_INT(_net_inet_tcp, OID_AUTO, tcbhashsize, CTLFLAG_RDTUN | CTLFLAG_NOFETCH,
     &tcp_tcbhashsize, 0, "Size of TCP control-block hashtable");
@@ -2723,6 +2733,20 @@ tcp_log_vain(struct in_conninfo *inc, struct tcphdr *th, void *ip4hdr,
 		return (NULL);
 
 	return (tcp_log_addr(inc, th, ip4hdr, ip6hdr));
+}
+
+char *
+tcp_log_newconn(struct in_conninfo *inc, struct tcphdr *th, void *ip4hdr,
+    const void *ip6hdr)
+{
+	static struct timeval lasttime;
+	static int curpps;
+
+	if ((tcp_log_newconn_failed || tcp_log_debug) &&
+	    ppsratecheck(&lasttime, &curpps, tcp_log_newconn_failed_ratelimit))
+		return (tcp_log_addr(inc, th, ip4hdr, ip6hdr));
+	
+	return (NULL);
 }
 
 char *
