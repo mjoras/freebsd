@@ -204,7 +204,7 @@ SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_newconn_failed, CTLFLAG_RW,
     "Log addresses if creating a new connection from the syncache fails");
 
 static int	tcp_log_newconn_failed_ratelimit = -1;
-SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_newconn_failed, CTLFLAG_RW,
+SYSCTL_INT(_net_inet_tcp, OID_AUTO, log_newconn_failed_ratelimit, CTLFLAG_RW,
     &tcp_log_newconn_failed_ratelimit, 0,
     "Per second limit for logging a failed new connection from the syncache");
 
